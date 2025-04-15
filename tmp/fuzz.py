@@ -3,7 +3,10 @@ import time
 import threading
 import subprocess
 from pathlib import Path
+import zipfile
 
+
+corpus_dir = "build/out/mupdf_xps2"
 FUZZER_CMD = [
     "/usr/bin/python3",
     "infra/helper.py",
@@ -11,10 +14,10 @@ FUZZER_CMD = [
     "mupdf",
     "xps_fuzzer",
     "--corpus-dir",
-    "build/out/mupdf_xps2"
+    corpus_dir
 ]
 
-TIMEOUT_DIR = Path("build/out/mupdf")
+MUPDF_DIR = Path("build/out/mupdf")
 POLL_INTERVAL = 5  # seconds
 
 # Event to signal a restart
@@ -25,7 +28,7 @@ def monitor_timeouts():
     print("[monitor] Started monitoring for timeout files...")
     seen_count = 0
     while True:
-        current_files = list(TIMEOUT_DIR.glob("timeout-*"))
+        current_files = list(MUPDF_DIR.glob("timeout-*"))
         current_count = len(current_files)
 
         if current_count > seen_count:
@@ -36,15 +39,27 @@ def monitor_timeouts():
         time.sleep(POLL_INTERVAL)
 
 def run_fuzzer():
+    first_time = True
     while True:
+        
+        if not first_time: 
+            # collect corpus 
+            with zipfile.ZipFile(os.path.join(MUPDF_DIR, "xps_fuzzer_seed_corpus.zip"), 'w') as z:
+                for dirpath, _, filenames in os.walk(corpus_dir):
+                    for file in filenames: 
+                        path_to_store = os.path.join(dirpath, file)
+                        print(f"Storing {path_to_store}")
+                        z.write(path_to_store, arcname=file)
+        first_time = False
         print("[fuzzer] Starting fuzzer...")
         proc = subprocess.Popen(FUZZER_CMD)
         restart_event.clear()
-
         while True:
             if restart_event.is_set():
                 print("[fuzzer] Restart signal received. Killing fuzzer...")
                 proc.kill()
+                
+                 
                 proc.wait()
                 restart_event.clear()
                 break
@@ -58,7 +73,7 @@ def run_fuzzer():
             time.sleep(1)
 
 if __name__ == "__main__":
-    os.makedirs(TIMEOUT_DIR, exist_ok=True)
+    os.makedirs(MUPDF_DIR, exist_ok=True)
 
     monitor_thread = threading.Thread(target=monitor_timeouts, daemon=True)
     fuzzer_thread = threading.Thread(target=run_fuzzer)
