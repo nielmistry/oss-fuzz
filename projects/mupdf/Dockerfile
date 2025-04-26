@@ -27,7 +27,7 @@ RUN git clone https://github.com/HiraokaHyperTools/SampleXpsDocuments_1_0 xps_sa
     rm -rf xps_samples
 
 RUN git clone https://github.com/linebender/resvg/ svg_samples && \ 
-    zip -q $SRC/svg_fuzzer_seed_corpus.zip svg_samples/crates/resvg/tests/tests/**/*.svg && \
+    zip -q $SRC/svg_fuzzer_seed_corpus.zip $(find svg_samples/crates/resvg/tests/tests/ -type f -name '*.svg') && \
     rm -rf svg_samples
 
 
