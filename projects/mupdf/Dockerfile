@@ -22,12 +22,17 @@ RUN git clone --depth 1 https://github.com/mozilla/pdf.js pdf.js && \
     zip -q $SRC/pdf_fuzzer_seed_corpus.zip pdf.js/test/pdfs/*.pdf && \
     rm -rf pdf.js
 
-RUN git clone https://github.com/HiraokaHyperTools/SampleXpsDocuments_1_0 sample_xps && \
-    zip -q $SRC/xps_fuzzer_seed_corpus.zip sample_xps/**/*.xps && \ 
-    rm -rf sample_xps
+RUN git clone https://github.com/HiraokaHyperTools/SampleXpsDocuments_1_0 xps_samples && \
+    zip -q $SRC/xps_fuzzer_seed_corpus.zip xps_samples/**/*.xps && \ 
+    rm -rf xps_samples
+
+RUN git clone https://github.com/linebender/resvg/ svg_samples && \ 
+    zip -q $SRC/svg_fuzzer_seed_corpus.zip svg_samples/crates/resvg/tests/tests/**/*.svg && \
+    rm -rf svg_samples
+
 
 ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/pdf.dict $SRC/pdf_fuzzer.dict
-ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/xml.dict $SRC/xps_fuzzer.dict
+ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/svg.dict $SRC/svg_fuzzer.dict
 
 WORKDIR mupdf
 COPY *.zip $SRC/
