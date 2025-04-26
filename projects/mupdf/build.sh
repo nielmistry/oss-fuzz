@@ -25,7 +25,8 @@ mv $SRC/{*.zip,*.dict,*.options} $OUT
 LDFLAGS="$CXXFLAGS" make -j$(nproc) HAVE_GLUT=no build=debug OUT=$WORK \
     $WORK/libmupdf-third.a $WORK/libmupdf.a
 
-for fuzz_target in "${fuzzers[@]}"; do
+for fuzz_target in "${fuzz_targets[@]}"; do
+	echo $fuzz_target
 	$CXX $CXXFLAGS -std=c++11 -Iinclude \
 	    $SRC/$fuzz_target.cc -o $OUT/$fuzz_target \
 	    $LIB_FUZZING_ENGINE $WORK/libmupdf.a $WORK/libmupdf-third.a
