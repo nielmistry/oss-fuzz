@@ -32,7 +32,6 @@ RUN git clone https://github.com/linebender/resvg/ svg_samples && \
 
 
 ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/pdf.dict $SRC/pdf_fuzzer.dict
-ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/svg.dict $SRC/svg_fuzzer.dict
 
 WORKDIR mupdf
 COPY *.zip $SRC/

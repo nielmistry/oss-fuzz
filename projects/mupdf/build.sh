@@ -18,7 +18,7 @@
 # supp_size is unused in harfbuzz so we will avoid it being unused.
 sed -i 's/supp_size;/supp_size;(void)(supp_size);/g' ./thirdparty/harfbuzz/src/hb-subset-cff1.cc
 
-fuzz_targets=("pdf_fuzzer" "xps_fuzzer" "svg_fuzzer")
+fuzz_targets=("pdf_fuzzer" "xps_fuzzer")
 
 mv $SRC/{*.zip,*.dict,*.options} $OUT
 
