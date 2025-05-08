@@ -17,11 +17,11 @@
 
 # supp_size is unused in harfbuzz so we will avoid it being unused.
 sed -i 's/supp_size;/supp_size;(void)(supp_size);/g' ./thirdparty/harfbuzz/src/hb-subset-cff1.cc
-file /src/sanitize-ignorelist.txt
+cp /src/sanitize-ignorelist.txt .
 fuzz_targets=("pdf_fuzzer" "xps_fuzzer")
 
 mv $SRC/{*.zip,*.dict,*.options,*.txt} $OUT
-export SANITIZER_IGNORELIST="/src/sanitize-ignorelist.txt"
+export SANITIZER_IGNORELIST="sanitize-ignorelist.txt"
 export CFLAGS+=" -fsanitize-ignorelist=${SANITIZER_IGNORELIST}"
 export CXXFLAGS+=" -fsanitize-ignorelist=${SANITIZER_IGNORELIST}"
 
