@@ -36,4 +36,5 @@ ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/
 WORKDIR mupdf
 COPY *.zip $SRC/
 COPY *.cc $SRC/
+COPY *.txt $SRC/
 COPY build.sh *.options $SRC/
