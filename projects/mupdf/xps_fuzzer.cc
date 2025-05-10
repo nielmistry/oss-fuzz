@@ -17,10 +17,16 @@
 */
 
 #include <cstdint>
-#include <stdlib.h>
-#include <string.h>
+#include <filesystem>
 #include <inttypes.h>
-
+#include <iostream>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <vector>
+#include <zip.h>
+#include <zlib.h> 
+#include <string.h>
 #include <mupdf/fitz.h>
 
 #define ALIGNMENT ((size_t) 16)
@@ -119,6 +125,79 @@ static fz_alloc_context fz_alloc_ossfuzz =
   fz_realloc_ossfuzz,
   fz_free_ossfuzz
 };
+
+namespace fs = std::filesystem;
+extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
+                                          size_t maxSize, unsigned int seed) {
+
+  uint16_t crc = crc32(0, Z_NULL, 0); 
+  crc = crc32(crc, data, size); 
+
+
+  zip_error_t *err = (zip_error_t *)malloc(sizeof(zip_error_t));
+  zip_error_init(err);
+  zip_source_t *src = zip_source_buffer_create(data, size, 0, err);
+
+  if (!src) {
+    zip_error_fini(err);
+    // TODO: return a dummy result
+    return 0;
+  }
+
+  zip_t *za = zip_open_from_source(src, 0, err);
+  if (!za) {
+    zip_source_free(src);
+    zip_error_fini(err);
+    // TODO: return a dummy result
+    return 0;
+  }
+
+  std::vector<zip_int64_t> interesting_files;
+
+  zip_int64_t num_entries = zip_get_num_entries(za, 0);
+  for (zip_int64_t i = 0; i < num_entries; i++) {
+    struct zip_stat stat;
+    if (zip_stat_index(za, i, 0, &stat) == 0) {
+      std::string name = stat.name;
+      auto path = fs::path(stat.name);
+      auto ext = path.extension();
+
+      if (ext == ".fpage" || ext == ".fdseq" || ext == ".fdoc") {
+        interesting_files.push_back(i);
+      }
+    }
+  }
+
+
+  auto num_files = interesting_files.size(); 
+  if (num_files == 0) {
+	  zip_close(za);
+    zip_error_fini(err);
+    // TODO: return something ? 
+	  return size;
+  }
+
+  auto vec_entry_to_modify = crc % num_files;
+  auto file_to_modify = interesting_files.at(vec_entry_to_modify);
+  
+
+  struct zip_stat stat;
+  zip_stat_init(&stat);
+  zip_stat_index(za, file_to_modify, 0, &stat);
+
+  char *file_data = (char*) malloc(stat.size + 300); // 300 more bytes for room to grow
+  memset(file_data, 0, sizeof(file_data));
+  
+  zip_file_t *f = zip_fopen_index(za, file_to_modify, 0);
+  zip_fread(f, file_data, stat.size);
+
+  size = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
+
+
+  zip_close(za);
+  zip_error_fini(err);
+  return size;
+}
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   fz_context *ctx;
