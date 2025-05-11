@@ -15,7 +15,7 @@
 ################################################################################
 
 FROM gcr.io/oss-fuzz-base/base-builder
-RUN apt-get update && apt-get install -y make libtool pkg-config libzip-dev
+RUN apt-get update && apt-get install -y make libtool pkg-config libzip-dev build-essential cmake zlib1g-dev vim
 RUN git clone --recursive --depth 1 git://git.ghostscript.com/mupdf.git mupdf
 
 RUN git clone --depth 1 https://github.com/mozilla/pdf.js pdf.js && \
@@ -33,8 +33,11 @@ RUN git clone https://github.com/linebender/resvg/ svg_samples && \
 
 ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/pdf.dict $SRC/pdf_fuzzer.dict
 
+RUN git clone https://github.com/nih-at/libzip $SRC/libzip
+
 WORKDIR mupdf
 COPY *.zip $SRC/
 COPY *.cc $SRC/
-COPY *.txt $SRC/
+COPY *.a $SRC/
+# COPY *.txt $SRC/
 COPY build.sh *.options $SRC/

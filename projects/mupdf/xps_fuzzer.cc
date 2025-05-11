@@ -127,6 +127,9 @@ static fz_alloc_context fz_alloc_ossfuzz =
 };
 
 namespace fs = std::filesystem;
+
+extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
+
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
                                           size_t maxSize, unsigned int seed) {
 
@@ -185,13 +188,12 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
   zip_stat_init(&stat);
   zip_stat_index(za, file_to_modify, 0, &stat);
 
-  char *file_data = (char*) malloc(stat.size + 300); // 300 more bytes for room to grow
+  uint8_t *file_data = (uint8_t*) malloc(stat.size + 300); // 300 more bytes for room to grow
   memset(file_data, 0, sizeof(file_data));
   
   zip_file_t *f = zip_fopen_index(za, file_to_modify, 0);
   zip_fread(f, file_data, stat.size);
-
-  size = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
+  size_t size2 = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
 
 
   zip_close(za);
