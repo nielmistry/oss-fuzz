@@ -16,6 +16,9 @@
 ################################################################################
 
 # supp_size is unused in harfbuzz so we will avoid it being unused.
+
+$SRC/make_libzip_a.sh
+
 sed -i 's/supp_size;/supp_size;(void)(supp_size);/g' ./thirdparty/harfbuzz/src/hb-subset-cff1.cc
 fuzz_targets=("pdf_fuzzer" "xps_fuzzer")
 
@@ -28,7 +31,7 @@ LDFLAGS="$CXXFLAGS" make -j$(nproc) HAVE_GLUT=no build=debug OUT=$WORK \
 for fuzz_target in "${fuzz_targets[@]}"; do
     $CXX $CXXFLAGS -std=c++17 -Iinclude \
         $SRC/${fuzz_target}.cc -o $OUT/${fuzz_target} \
-        $LIB_FUZZING_ENGINE $WORK/libmupdf.a $WORK/libmupdf-third.a $SRC/libzip_all.a
+        $LIB_FUZZING_ENGINE $WORK/libmupdf.a $WORK/libmupdf-third.a $WORK/libzip_all.a
 
     if [ ! -f "${OUT}/${fuzz_target}_seed_corpus.zip" ]; then
       echo "missing seed corpus"
@@ -47,6 +50,3 @@ for fuzz_target in "${fuzz_targets[@]}"; do
     fi
 
 done
-
-
-cp /usr/lib/libFuzzingEngine.a $SRC/

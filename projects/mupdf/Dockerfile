@@ -38,6 +38,4 @@ RUN git clone https://github.com/nih-at/libzip $SRC/libzip
 WORKDIR mupdf
 COPY *.zip $SRC/
 COPY *.cc $SRC/
-COPY *.a $SRC/
-# COPY *.txt $SRC/
-COPY build.sh *.options $SRC/
+COPY make_libzip_a.sh build.sh *.options $SRC/
