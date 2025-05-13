@@ -65,8 +65,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     zip_uint64_t new_length = 0;
     unsigned long crc = crc32(0, Z_NULL, 0);
     crc = crc32(crc, data, size);
-
-
+    
     void *copied_data = malloc(size);
     memcpy(copied_data, data, size);
 
@@ -78,19 +77,19 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     if (!src)
     {
         fprintf(stderr, "Could not open source: %s\n", zip_error_strerror(&err));
+        fprintf(stderr, "WARNING: not mutating file...");
         zip_error_fini(&err);
-        // TODO: return a dummy result
-        return 0;
+        return size;
     }
 
     zip_t *za = zip_open_from_source(src, 0, &err);
     if (!za)
     {
         fprintf(stderr, "Could not open archive: %s\n", zip_error_strerror(&err));
+        fprintf(stderr, "WARNING: not mutating file...");
         zip_source_free(src);
         zip_error_fini(&err);
-        // TODO: return a dummy result
-        return 0;
+        return size;
     }
 
     zip_error_fini(&err);
@@ -118,10 +117,10 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     auto num_files = interesting_files.size();
     if (num_files == 0)
     {
-        fprintf(stderr, "No interesting files in archive"); // TODO: This should just be empty...
+        fprintf(stderr, "No interesting files in archive"); 
         zip_close(za);
         zip_error_fini(&err);
-        // TODO: return something ?
+        fprintf(stderr, "WARNING: not mutating file...");
         return size;
     }
 
@@ -202,14 +201,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
         zip_source_close(src);
     }
     
-    
-    
-    unsigned long crc_new = crc32(0, Z_NULL, 0);
-    crc_new = crc32(crc, (uint8_t *)data, size);
-    
-    printf("sz: %lu -> %lu, crc: %lu -> %lu\n", size, (size_t)new_length, crc, crc_new);
     memcpy(data, new_buf, new_length);
-
     return (size_t)new_length;
 }
 
