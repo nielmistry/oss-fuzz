@@ -196,20 +196,20 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
   zip_stat_init(&stat);
   zip_stat_index(za, change_file_index, 0, &stat);
 
-  size_t size_to_allocate = stat.size + XPS_GROWTH_RATE;
+  size_t buffer_size = stat.size + XPS_GROWTH_RATE;
 
-  if (((size - stat.size) + size_to_allocate) > maxSize) {
-    size_to_allocate = maxSize - (size - stat.size);
-    fprintf(stdout, "Clipping to: 0x%zx\n", size_to_allocate);
+  if (((size - stat.size) + buffer_size) > maxSize) {
+    buffer_size = maxSize - (size - stat.size);
+    fprintf(stdout, "Clipping to: 0x%zx\n", buffer_size);
   }
 
-  uint8_t *file_data = (uint8_t *)malloc(size_to_allocate);
+  uint8_t *file_data = (uint8_t *)malloc(buffer_size);
   zip_file_t *f = zip_fopen_index(za, change_file_index, 0);
 
   printf("Picked file %s to modify\n", stat.name);
   zip_fread(f, file_data, stat.size);
   zip_fclose(f);
-  size_t new_size = LLVMFuzzerMutate(file_data, stat.size, size_to_allocate);
+  size_t new_size = LLVMFuzzerMutate(file_data, stat.size, buffer_size);
 
   printf("old_size: %lu, new_size: %lu\n", stat.size, new_size);
 
