@@ -10,15 +10,13 @@
 #include <zlib.h>
 #include <string.h>
 
-
-#define ALIGNMENT ((size_t) 16)
-#define KBYTE ((size_t) 1024)
+#define ALIGNMENT ((size_t)16)
+#define KBYTE ((size_t)1024)
 #define MBYTE (1024 * KBYTE)
 #define GBYTE (1024 * MBYTE)
 #define MAX_ALLOCATION (1 * GBYTE)
 #define MAX_XPS_SIZE (10 * MBYTE)
-#define XPS_GROWTH_RATE (500) 
-
+#define XPS_GROWTH_RATE (500)
 
 extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize)
 {
@@ -28,23 +26,54 @@ extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize)
     return Size;
 }
 
+void printHexTable(const uint8_t *data, size_t size, size_t bytesPerRow = 16)
+{
+    for (size_t i = 0; i < size; i += bytesPerRow)
+    {
+        printf("%08zx  ", i); // Print the offset
+        for (size_t j = 0; j < bytesPerRow; ++j)
+        {
+            if (i + j < size)
+                printf("%02x ", data[i + j]); // Print hex value
+            else
+                printf("   "); // Padding for incomplete rows
+        }
+
+        printf(" |");
+        for (size_t j = 0; j < bytesPerRow; ++j)
+        {
+            if (i + j < size)
+            {
+                uint8_t c = data[i + j];
+                printf("%c", (c >= 32 && c <= 126) ? c : '.'); // Print ASCII or '.'
+            }
+            else
+            {
+                printf(" ");
+            }
+        }
+        printf("|\n");
+    }
+}
+
 namespace fs = std::filesystem;
 
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
                                           size_t maxSize, unsigned int seed)
 {
-
+    uint8_t *new_buf;
+    zip_uint64_t new_length = 0;
     unsigned long crc = crc32(0, Z_NULL, 0);
     crc = crc32(crc, data, size);
+
+
+    void *copied_data = malloc(size);
+    memcpy(copied_data, data, size);
 
     zip_error_t err;
     zip_error_init(&err);
 
-    zip_source_t *src = zip_source_buffer_create(data, size, 0, &err);
-    zip_stat_t src_stat_orig; 
-    if (zip_source_stat(src, &src_stat_orig) < 0) {
-        fprintf(stderr, "stat failed: %s\n", zip_error_strerror(zip_source_error(src)));
-    }
+    zip_source_t *src = zip_source_buffer_create(copied_data, size, 0, &err);
 
     if (!src)
     {
@@ -64,6 +93,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
         return 0;
     }
 
+    zip_error_fini(&err);
     zip_source_keep(src); // increment reference counter so we can still copy the buf once we're done.
 
     std::vector<zip_int64_t> interesting_files;
@@ -104,22 +134,22 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
 
     size_t size_to_allocate = stat.size + XPS_GROWTH_RATE;
 
-    if (((size - stat.size) + size_to_allocate) > maxSize) {
-        size_to_allocate = maxSize - (size - stat.size);
-    }
-    fprintf(stdout, "Clipping to: 0x%zx\n", size_to_allocate);
-    
-    uint8_t *file_data = (uint8_t *)malloc(size_to_allocate);
-    memset(file_data, 0, size_to_allocate);
+    // if (((size - stat.size) + size_to_allocate) > maxSize) {
+    //     size_to_allocate = maxSize - (size - stat.size);
+    //     fprintf(stdout, "Clipping to: 0x%zx\n", size_to_allocate);
+    // }
 
+    uint8_t *file_data = (uint8_t *)malloc(size_to_allocate);
     zip_file_t *f = zip_fopen_index(za, change_file_index, 0);
-    
+
     printf("Picked file %s to modify\n", stat.name);
     zip_fread(f, file_data, stat.size);
-    size_t new_size = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
+    zip_fclose(f);
+    size_t new_size = LLVMFuzzerMutate(file_data, stat.size, size_to_allocate);
 
+    printf("old_size: %lu, new_size: %lu\n", stat.size, new_size);
 
-    zip_source_t *modified_file = zip_source_buffer(za, file_data, new_size, 0);
+    zip_source_t *modified_file = zip_source_buffer(za, file_data, (zip_uint64_t) new_size, 0);
 
     if (!modified_file)
     {
@@ -131,44 +161,56 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
 
     int result = zip_file_replace(za, change_file_index, modified_file, 0);
 
-    struct zip_stat new_stat;
-    zip_stat_index(za, change_file_index, 0, &new_stat); 
-
-    if (result != 0)
+    if (zip_close(za) < 0)
     {
-        printf("Error replacing zip");
-        free(file_data);
-        zip_close(za);
-        zip_error_fini(&err);
+        fprintf(stderr, "cannot close the archive because: %s\n", zip_strerror(za));
+        return size;
     }
 
-    int err_src = zip_source_begin_write(src); 
-    err_src |= zip_source_commit_write(src);
-
-    if(err_src < 0) {
-	    fprintf(stderr, "error!!!\n");
-	    fprintf(stderr, "ze: %s\n", zip_error_strerror(zip_source_error(src)));
-    } else {
-	    printf("commited :)");
+    if (zip_source_is_deleted(src))
+    {
+        fprintf(stderr, "The source was deleted!!!");
     }
+    else
+    {
+        zip_stat_t new_stat;
+        if (zip_source_stat(src, &new_stat) < 0)
+        {
+            fprintf(stderr, "Cannot stat source: %s\n", zip_error_strerror(zip_source_error(src)));
+            return size;
+        }
+        new_length = new_stat.size;
+        new_buf = (uint8_t *)malloc(new_stat.size);
 
-    zip_stat_t src_stat; 
-    if (zip_source_stat(src, &src_stat) < 0) {
-        fprintf(stderr, "stat failed: %s\n", zip_error_strerror(zip_source_error(src)));
+        memset(new_buf, 1, new_length);
+
+        if (zip_source_open(src) < 0) {
+            fprintf(stderr, "Cannot open source: %s\n", zip_error_strerror(zip_source_error(src)));
+            zip_source_close(src);
+            return size;
+        }
+        
+        zip_source_seek(src, 0, SEEK_SET);
+        zip_uint64_t read_bytes = (zip_uint64_t)zip_source_read(src, new_buf, new_length);
+
+        if (read_bytes < new_length)
+        {
+            fprintf(stderr, "Only read %lu/%lu bytes into the buffer...\n", read_bytes, new_length);
+            return size;
+        }
+        
+        zip_source_close(src);
     }
+    
+    
+    
+    unsigned long crc_new = crc32(0, Z_NULL, 0);
+    crc_new = crc32(crc, (uint8_t *)data, size);
+    printf("sz: %lu -> %lu, crc: %lu -> %lu\n", size, (size_t)new_length, crc, crc_new);
+    
+    memcpy(data, new_buf, new_length);
 
-    size_t new_size2 = src_stat.size;
-    fprintf(stdout, "old size: 0x%zx, new size: 0x%zx, max size: 0x%zx\n", src_stat_orig.size, new_size2, maxSize);
-    // open for reading
-    int retval = zip_source_open(src);
-    retval |= zip_source_seek(src, 0, SEEK_SET);
-    if (retval < 0) {
-        fprintf(stderr, "Not able to seek or open :(");
-    }
-
-    zip_error_fini(&err);
-
-    return new_size2;
+    return (size_t)new_length;
 }
 
 int main()
@@ -187,7 +229,6 @@ int main()
 
     size_t max_size = file_size + 500;
 
-
     uint8_t *data = (uint8_t *)malloc(max_size);
     if (!data)
     {
@@ -201,7 +242,7 @@ int main()
 
     std::cout << "Loaded file: " << filename << " (" << file_size << " bytes)" << std::endl;
 
-    LLVMFuzzerCustomMutator(data, file_size, max_size, 0);
+    size_t new_sz = LLVMFuzzerCustomMutator(data, file_size, max_size, 0);
 
     FILE *output_file = fopen("test_out.xps", "wb");
     if (!output_file)
@@ -211,7 +252,7 @@ int main()
         return 1;
     }
 
-    fwrite(data, 1, file_size, output_file);
+    fwrite(data, 1, new_sz, output_file);
     fclose(output_file);
 
     std::cout << "Modified data written to test_out.xps" << std::endl;
