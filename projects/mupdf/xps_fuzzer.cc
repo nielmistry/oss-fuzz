@@ -35,6 +35,9 @@
 #define GBYTE (1024 * MBYTE)
 #define MAX_ALLOCATION (1 * GBYTE)
 
+#define MAX_XPS_SIZE (10 * MBYTE)
+#define XPS_GROWTH_RATE (500) 
+
 static size_t used;
 
 static void *fz_limit_reached_ossfuzz(size_t oldsize, size_t size)
@@ -155,6 +158,8 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     return 0;
   }
 
+  zip_source_keep(src); // increment reference counter so we can still copy the buf once we're done. 
+
   std::vector<zip_int64_t> interesting_files;
 
   zip_int64_t num_entries = zip_get_num_entries(za, 0);
@@ -188,17 +193,40 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
   zip_stat_init(&stat);
   zip_stat_index(za, file_to_modify, 0, &stat);
 
-  uint8_t *file_data = (uint8_t*) malloc(stat.size + 300); // 300 more bytes for room to grow
-  memset(file_data, 0, sizeof(file_data));
+  size_t size_to_allocate = (size_t) stat.size + XPS_GROWTH_RATE;
+  if (size_to_allocate > maxSize) {
+    size_to_allocate = maxSize;
+  }
+  
+  uint8_t *file_data = (uint8_t*) malloc(size_to_allocate); 
+  memset(file_data, 0, size_to_allocate);
   
   zip_file_t *f = zip_fopen_index(za, file_to_modify, 0);
   zip_fread(f, file_data, stat.size);
-  size_t size2 = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
+  size_t new_size = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
 
 
+  zip_source_t *modified_file = zip_source_buffer(za, file_data, new_size, 0); 
+  if(!modified_file){
+    free(file_data);
+    zip_close(za);
+    zip_error_fini(err); 
+    return size;
+  }
+  int result = zip_file_replace(za, file_to_modify, file_data, modified_file, 0);
+  if (result != 0) {
+    printf("Error replacing zip");
+    free(file_data);
+    zip_close(za);
+    zip_error_fini(err);
+  }
+
+  free(file_data);
   zip_close(za);
   zip_error_fini(err);
-  return size;
+
+
+  return new_size;
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
