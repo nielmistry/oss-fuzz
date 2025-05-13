@@ -134,10 +134,10 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
 
     size_t size_to_allocate = stat.size + XPS_GROWTH_RATE;
 
-    // if (((size - stat.size) + size_to_allocate) > maxSize) {
-    //     size_to_allocate = maxSize - (size - stat.size);
-    //     fprintf(stdout, "Clipping to: 0x%zx\n", size_to_allocate);
-    // }
+    if (((size - stat.size) + size_to_allocate) > maxSize) {
+        size_to_allocate = maxSize - (size - stat.size);
+        fprintf(stdout, "Clipping to: 0x%zx\n", size_to_allocate);
+    }
 
     uint8_t *file_data = (uint8_t *)malloc(size_to_allocate);
     zip_file_t *f = zip_fopen_index(za, change_file_index, 0);
@@ -206,8 +206,8 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     
     unsigned long crc_new = crc32(0, Z_NULL, 0);
     crc_new = crc32(crc, (uint8_t *)data, size);
-    printf("sz: %lu -> %lu, crc: %lu -> %lu\n", size, (size_t)new_length, crc, crc_new);
     
+    printf("sz: %lu -> %lu, crc: %lu -> %lu\n", size, (size_t)new_length, crc, crc_new);
     memcpy(data, new_buf, new_length);
 
     return (size_t)new_length;
