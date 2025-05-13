@@ -22,6 +22,8 @@ $SRC/make_libzip_a.sh
 sed -i 's/supp_size;/supp_size;(void)(supp_size);/g' ./thirdparty/harfbuzz/src/hb-subset-cff1.cc
 fuzz_targets=("pdf_fuzzer" "xps_fuzzer")
 
+git checkout 7f1e6c0a15d158373a7004d2840ac282aec74d1f
+
 cp $SRC/{*.zip,*.dict,*.options} $OUT
 export SANITIZER_IGNORELIST="sanitize-ignorelist.txt"
 
