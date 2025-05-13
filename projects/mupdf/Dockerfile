@@ -15,21 +15,23 @@
 ################################################################################
 
 FROM gcr.io/oss-fuzz-base/base-builder
-RUN apt-get update && apt-get install -y make libtool pkg-config libzip-dev build-essential cmake zlib1g-dev vim
+ENV TZ=Etc/UTC
+RUN apt-get update && apt-get install -y make libtool pkg-config libzip-dev build-essential cmake zlib1g-dev python3 python3-pip
 RUN git clone --recursive --depth 1 git://git.ghostscript.com/mupdf.git mupdf
 
+
 RUN git clone --depth 1 https://github.com/mozilla/pdf.js pdf.js && \
-    zip -q $SRC/pdf_fuzzer_seed_corpus.zip pdf.js/test/pdfs/*.pdf && \
-    rm -rf pdf.js
+zip -q $SRC/pdf_fuzzer_seed_corpus.zip pdf.js/test/pdfs/*.pdf && \
+rm -rf pdf.js
 
+RUN apt install -y python3-pip && \
+pip3 install lxml 
+
+COPY prune_xps_samples.py $SRC/
 RUN git clone https://github.com/HiraokaHyperTools/SampleXpsDocuments_1_0 xps_samples && \
-    zip -q $SRC/xps_fuzzer_seed_corpus.zip xps_samples/**/*.xps && \ 
-    rm -rf xps_samples
-
-RUN git clone https://github.com/linebender/resvg/ svg_samples && \ 
-    zip -q $SRC/svg_fuzzer_seed_corpus.zip $(find svg_samples/crates/resvg/tests/tests/ -type f -name '*.svg') && \
-    rm -rf svg_samples
-
+    python3 $SRC/prune_xps_samples.py xps_samples/ && \
+    zip -q $SRC/xps_fuzzer_seed_corpus.zip out/*.xps && \ 
+    rm -rf xps_samples out
 
 ADD https://raw.githubusercontent.com/AFLplusplus/AFLplusplus/refs/heads/stable/dictionaries/pdf.dict $SRC/pdf_fuzzer.dict
 
