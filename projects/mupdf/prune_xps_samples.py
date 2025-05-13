@@ -100,12 +100,13 @@ if __name__ == "__main__":
                 if not simple_copy:
                     remove_images_from_xps(xps_file, "out/")
                 else:
-                    file_size = os.path.getsize(xps_file)   
-                    print(f"Copying {xps_file} simply")
-                    if file_size < 30000:
-                        shutil.copy2(xps_file, "out/")
-                    else:
-                        print(f"Skipping {xps_file} as it is too large.")
+                    shutil.copy2(xps_file, "out/")
+                   
+    for root, dirs, files in os.walk("out/"):
+        for file in files:
+            if os.path.getsize(os.path.join(root, file)) > 800000:
+                print(f"Deleting {file} because it is too large")
+                os.remove(os.path.join(root, file))
 
                 
 
