@@ -37,9 +37,10 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     unsigned long crc = crc32(0, Z_NULL, 0);
     crc = crc32(crc, data, size);
 
-    zip_error_t *err = (zip_error_t *)malloc(sizeof(zip_error_t));
-    zip_error_init(err);
-    zip_source_t *src = zip_source_file_create("test2.xps", 0, size, err);
+    zip_error_t err;
+    zip_error_init(&err);
+
+    zip_source_t *src = zip_source_buffer_create(data, size, 0, &err);
     zip_stat_t src_stat_orig; 
     if (zip_source_stat(src, &src_stat_orig) < 0) {
         fprintf(stderr, "stat failed: %s\n", zip_error_strerror(zip_source_error(src)));
@@ -47,16 +48,18 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
 
     if (!src)
     {
-        zip_error_fini(err);
+        fprintf(stderr, "Could not open source: %s\n", zip_error_strerror(&err));
+        zip_error_fini(&err);
         // TODO: return a dummy result
         return 0;
     }
 
-    zip_t *za = zip_open_from_source(src, 0, err);
+    zip_t *za = zip_open_from_source(src, 0, &err);
     if (!za)
     {
+        fprintf(stderr, "Could not open archive: %s\n", zip_error_strerror(&err));
         zip_source_free(src);
-        zip_error_fini(err);
+        zip_error_fini(&err);
         // TODO: return a dummy result
         return 0;
     }
@@ -85,18 +88,19 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     auto num_files = interesting_files.size();
     if (num_files == 0)
     {
+        fprintf(stderr, "No interesting files in archive"); // TODO: This should just be empty...
         zip_close(za);
-        zip_error_fini(err);
+        zip_error_fini(&err);
         // TODO: return something ?
         return size;
     }
 
     auto vec_entry_to_modify = crc % num_files;
-    auto file_to_modify = interesting_files.at(vec_entry_to_modify);
+    auto change_file_index = interesting_files.at(vec_entry_to_modify);
 
     struct zip_stat stat;
     zip_stat_init(&stat);
-    zip_stat_index(za, file_to_modify, 0, &stat);
+    zip_stat_index(za, change_file_index, 0, &stat);
 
     size_t size_to_allocate = stat.size + XPS_GROWTH_RATE;
 
@@ -108,39 +112,39 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     uint8_t *file_data = (uint8_t *)malloc(size_to_allocate);
     memset(file_data, 0, size_to_allocate);
 
-    zip_file_t *f = zip_fopen_index(za, file_to_modify, 0);
+    zip_file_t *f = zip_fopen_index(za, change_file_index, 0);
     
     printf("Picked file %s to modify\n", stat.name);
     zip_fread(f, file_data, stat.size);
     size_t new_size = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
-    
+
 
     zip_source_t *modified_file = zip_source_buffer(za, file_data, new_size, 0);
+
     if (!modified_file)
     {
         free(file_data);
         zip_close(za);
-        zip_error_fini(err);
+        zip_error_fini(&err);
         return size;
     }
-    int result = zip_file_replace(za, file_to_modify, modified_file, 0);
+
+    int result = zip_file_replace(za, change_file_index, modified_file, 0);
 
     struct zip_stat new_stat;
-    zip_stat_index(za, file_to_modify, 0, &new_stat); 
+    zip_stat_index(za, change_file_index, 0, &new_stat); 
 
     if (result != 0)
     {
         printf("Error replacing zip");
         free(file_data);
         zip_close(za);
-        zip_error_fini(err);
+        zip_error_fini(&err);
     }
 
-
-    fprintf(stderr, "ze: %s\n", zip_error_strerror(zip_source_error(src)));
     int err_src = zip_source_begin_write(src); 
-    // zip_close(za);
     err_src |= zip_source_commit_write(src);
+
     if(err_src < 0) {
 	    fprintf(stderr, "error!!!\n");
 	    fprintf(stderr, "ze: %s\n", zip_error_strerror(zip_source_error(src)));
@@ -161,14 +165,8 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
     if (retval < 0) {
         fprintf(stderr, "Not able to seek or open :(");
     }
-    // size_t read_size = zip_source_read(src, data, new_size2);
-    // if (read_size != new_size2) {
-    //     fprintf(stderr, "BAD!!!! 0x%zx != 0x%zx\n", read_size, new_size2);
-    // }
 
-
-    // now rewrite things from src into data. 
-    zip_error_fini(err);
+    zip_error_fini(&err);
 
     return new_size2;
 }
