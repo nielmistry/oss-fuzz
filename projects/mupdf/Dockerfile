@@ -17,7 +17,7 @@
 FROM gcr.io/oss-fuzz-base/base-builder
 ENV TZ=Etc/UTC
 RUN apt-get update && apt-get install -y make libtool pkg-config libzip-dev build-essential cmake zlib1g-dev python3 python3-pip
-RUN git clone --recursive --depth 1 git://git.ghostscript.com/mupdf.git mupdf
+RUN git clone --recursive git://git.ghostscript.com/mupdf.git mupdf
 
 
 RUN git clone --depth 1 https://github.com/mozilla/pdf.js pdf.js && \
