@@ -131,28 +131,36 @@ extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
 
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
                                           size_t maxSize, unsigned int seed) {
-
-  uint16_t crc = crc32(0, Z_NULL, 0);
+  uint8_t *new_buf;
+  zip_uint64_t new_length = 0;
+  unsigned long crc = crc32(0, Z_NULL, 0);
   crc = crc32(crc, data, size);
 
-  zip_error_t *err = (zip_error_t *)malloc(sizeof(zip_error_t));
-  zip_error_init(err);
-  zip_source_t *src = zip_source_buffer_create(data, size, 0, err);
+  void *copied_data = malloc(size);
+  memcpy(copied_data, data, size);
+
+  zip_error_t err;
+  zip_error_init(&err);
+
+  zip_source_t *src = zip_source_buffer_create(copied_data, size, 0, &err);
 
   if (!src) {
-    zip_error_fini(err);
-    // TODO: return a dummy result
-    return 0;
+    fprintf(stderr, "Could not open source: %s\n", zip_error_strerror(&err));
+    fprintf(stderr, "WARNING: not mutating file...");
+    zip_error_fini(&err);
+    return size;
   }
 
-  zip_t *za = zip_open_from_source(src, 0, err);
+  zip_t *za = zip_open_from_source(src, 0, &err);
   if (!za) {
+    fprintf(stderr, "Could not open archive: %s\n", zip_error_strerror(&err));
+    fprintf(stderr, "WARNING: not mutating file...");
     zip_source_free(src);
-    zip_error_fini(err);
-    // TODO: return a dummy result
-    return 0;
+    zip_error_fini(&err);
+    return size;
   }
 
+  zip_error_fini(&err);
   zip_source_keep(src); // increment reference counter so we can still copy the
                         // buf once we're done.
 
@@ -174,54 +182,91 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
 
   auto num_files = interesting_files.size();
   if (num_files == 0) {
+    fprintf(stderr, "No interesting files in archive");
     zip_close(za);
-    zip_error_fini(err);
-    // TODO: return something ?
+    zip_error_fini(&err);
+    fprintf(stderr, "WARNING: not mutating file...");
     return size;
   }
 
   auto vec_entry_to_modify = crc % num_files;
-  auto file_to_modify = interesting_files.at(vec_entry_to_modify);
+  auto change_file_index = interesting_files.at(vec_entry_to_modify);
 
   struct zip_stat stat;
   zip_stat_init(&stat);
-  zip_stat_index(za, file_to_modify, 0, &stat);
+  zip_stat_index(za, change_file_index, 0, &stat);
 
-  size_t size_to_allocate = (size_t)stat.size + XPS_GROWTH_RATE;
-  if (size_to_allocate > maxSize) {
-    size_to_allocate = maxSize;
+  size_t size_to_allocate = stat.size + XPS_GROWTH_RATE;
+
+  if (((size - stat.size) + size_to_allocate) > maxSize) {
+    size_to_allocate = maxSize - (size - stat.size);
+    fprintf(stdout, "Clipping to: 0x%zx\n", size_to_allocate);
   }
 
   uint8_t *file_data = (uint8_t *)malloc(size_to_allocate);
-  memset(file_data, 0, size_to_allocate);
+  zip_file_t *f = zip_fopen_index(za, change_file_index, 0);
 
-  zip_file_t *f = zip_fopen_index(za, file_to_modify, 0);
+  printf("Picked file %s to modify\n", stat.name);
   zip_fread(f, file_data, stat.size);
-  size_t new_size = LLVMFuzzerMutate(file_data, sizeof(file_data), stat.size);
+  zip_fclose(f);
+  size_t new_size = LLVMFuzzerMutate(file_data, stat.size, size_to_allocate);
 
-  zip_source_t *modified_file = zip_source_buffer(za, file_data, new_size, 0);
+  printf("old_size: %lu, new_size: %lu\n", stat.size, new_size);
+
+  zip_source_t *modified_file =
+      zip_source_buffer(za, file_data, (zip_uint64_t)new_size, 0);
+
   if (!modified_file) {
     free(file_data);
     zip_close(za);
-    zip_error_fini(err);
+    zip_error_fini(&err);
     return size;
   }
-  int result =
-      zip_file_replace(za, file_to_modify, file_data, modified_file, 0);
-  if (result != 0) {
-    printf("Error replacing zip");
-    free(file_data);
-    zip_close(za);
-    zip_error_fini(err);
+
+  int result = zip_file_replace(za, change_file_index, modified_file, 0);
+
+  if (zip_close(za) < 0) {
+    fprintf(stderr, "cannot close the archive because: %s\n", zip_strerror(za));
+    return size;
   }
 
-  free(file_data);
-  zip_close(za);
-  zip_error_fini(err);
+  if (zip_source_is_deleted(src)) {
+    fprintf(stderr, "The source was deleted!!!");
+  } else {
+    zip_stat_t new_stat;
+    if (zip_source_stat(src, &new_stat) < 0) {
+      fprintf(stderr, "Cannot stat source: %s\n",
+              zip_error_strerror(zip_source_error(src)));
+      return size;
+    }
+    new_length = new_stat.size;
+    new_buf = (uint8_t *)malloc(new_stat.size);
 
-  return new_size;
+    memset(new_buf, 1, new_length);
+
+    if (zip_source_open(src) < 0) {
+      fprintf(stderr, "Cannot open source: %s\n",
+              zip_error_strerror(zip_source_error(src)));
+      zip_source_close(src);
+      return size;
+    }
+
+    zip_source_seek(src, 0, SEEK_SET);
+    zip_uint64_t read_bytes =
+        (zip_uint64_t)zip_source_read(src, new_buf, new_length);
+
+    if (read_bytes < new_length) {
+      fprintf(stderr, "Only read %lu/%lu bytes into the buffer...\n",
+              read_bytes, new_length);
+      return size;
+    }
+
+    zip_source_close(src);
+  }
+
+  memcpy(data, new_buf, new_length);
+  return (size_t)new_length;
 }
-
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   fz_context *ctx;
   fz_stream *stream;
